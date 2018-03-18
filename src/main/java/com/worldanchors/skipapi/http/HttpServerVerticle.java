@@ -1,9 +1,8 @@
 package com.worldanchors.skipapi.http;
 
-import com.google.gson.Gson;
 import com.worldanchors.skipapi.database.CustomerDatabaseServices;
 import com.worldanchors.skipapi.database.DatabaseServices;
-import com.worldanchors.skipapi.database.Entities.Customer;
+import com.worldanchors.skipapi.database.ProductDatabaseServices;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.http.HttpServer;
@@ -17,18 +16,26 @@ public class HttpServerVerticle extends AbstractVerticle {
 
     public static final Logger LOGGER = LoggerFactory.getLogger(HttpServerVerticle.class);
     public static final String CONFIG_HTTP_SERVER_PORT = "http.server.port";
-    public static final String CONFIG_DB_QUEUE = "skip.queue";
-    private DatabaseServices customerDBS;
+    public static final String CONFIG_CUSTOMER_DB_QUEUE = "skip.customer.queue";
+    public static final String CONFIG_PRODUCT_DB_QUEUE = "skip.product.queue";
+    private CustomerDatabaseServices customerDBS;
+    private ProductDatabaseServices productDBS;
 
     @Override
     public void start(Future<Void> startFuture) throws Exception {
 
-        customerDBS = DatabaseServices.createProxy(vertx, config().getString(CONFIG_DB_QUEUE, "skip.queue"));
+        customerDBS = (CustomerDatabaseServices) DatabaseServices.createProxy(vertx,
+                config().getString(CONFIG_CUSTOMER_DB_QUEUE, "skip.customer.queue"));
+        productDBS =(ProductDatabaseServices) DatabaseServices.createProxy(vertx,
+                config().getString(CONFIG_PRODUCT_DB_QUEUE, "skip.product.queue"));
 
         HttpServer server = vertx.createHttpServer();
         Router router = Router.router(vertx);
+        //Customer
         router.route().handler(BodyHandler.create());
         router.post("/api/v1/customer").handler(this::postCustomer);
+        //Products
+        router.get("/api/v1/product").handler(this::getAllproducts);
 
         server.requestHandler(router::accept).listen(config().getInteger(CONFIG_HTTP_SERVER_PORT, 8080),
                 asyncResult -> {
@@ -44,16 +51,26 @@ public class HttpServerVerticle extends AbstractVerticle {
 
     }
 
+    private void getAllproducts(RoutingContext routingContext) {
+        productDBS.selectAll(asyncResult ->{
+           if(asyncResult.succeeded()){
+               routingContext.response().putHeader("Content-Type", "application/json; charset=utf-8");
+               routingContext.response().end(asyncResult.result().toString());
+           } else {
+               routingContext.response().setStatusCode(500);
+           }
+        });
+    }
+
     private void postCustomer(RoutingContext routingContext) {
-        Gson gson = new Gson();
-        Customer customer = gson.fromJson(routingContext.getBodyAsJson().toString(), Customer.class);
-        customerDBS.insert(customer, asyncResult -> {
+        customerDBS.insert(routingContext.getBodyAsJson(), asyncResult -> {
             if (asyncResult.succeeded()) {
                 routingContext.response().setStatusCode(200);
                 routingContext.response().end();
             } else {
-                routingContext.response().setStatusCode(403).putHeader("Content-Type", "application/json");
-                routingContext.response().end("{\"error\":\"The server failed to save the user\"");
+                routingContext.response().setStatusCode(400).putHeader("Content-Type",
+                        "application/json; charset=utf-8");
+                routingContext.response().end("{\"error\":\"There is already an account with this email!\"}");
             }
         });
 

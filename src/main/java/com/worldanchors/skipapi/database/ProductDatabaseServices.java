@@ -10,15 +10,14 @@ import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.jdbc.JDBCClient;
 import io.vertx.ext.sql.ResultSet;
 
-import java.util.Date;
 import java.util.stream.Collectors;
 
-public class CustomerDatabaseServices implements DatabaseServices {
+public class ProductDatabaseServices implements DatabaseServices {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(CustomerDatabaseServices.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ProductDatabaseServices.class);
     private final JDBCClient jdbcClient;
 
-    public CustomerDatabaseServices(JDBCClient jdbcClient, Handler<AsyncResult<DatabaseServices>> readyHandler) {
+    public ProductDatabaseServices(JDBCClient jdbcClient, Handler<AsyncResult<DatabaseServices>> readyHandler) {
         this.jdbcClient = jdbcClient;
 
         jdbcClient.getConnection(asyncResult -> {
@@ -33,14 +32,13 @@ public class CustomerDatabaseServices implements DatabaseServices {
 
     @Override
     public DatabaseServices selectAll(Handler<AsyncResult<JsonArray>> resultHandle) {
-        jdbcClient.query("SELECT * FROM skip.customer", result -> {
+
+        jdbcClient.query("SELECT * FROM skip.product", result -> {
             if (result.succeeded()) {
                 JsonArray customers = new JsonArray(result.result()
                         .getResults()
-                        .stream()
-                        .map(json -> json.getString(0))
-                        .sorted()
-                        .collect(Collectors.toList()));
+                        .stream().map(json -> json.getString(1))
+                        .sorted().collect(Collectors.toList()));
                 resultHandle.handle(Future.succeededFuture(customers));
             } else {
                 LOGGER.error("Database query error", result.cause());
@@ -49,10 +47,10 @@ public class CustomerDatabaseServices implements DatabaseServices {
         return this;
     }
 
-
     @Override
     public DatabaseServices selectById(int id, Handler<AsyncResult<JsonObject>> resultHandler) {
-        jdbcClient.queryWithParams("SELECT * FROM skip.customer WHERE id = ? ;", new JsonArray().add(id), fetch -> {
+        String sqlSelectById = "SELECT * FROM skip.product WHERE id = ? ;";
+        jdbcClient.queryWithParams(sqlSelectById, new JsonArray().add(id), fetch -> {
             if (fetch.succeeded()) {
                 JsonObject response = new JsonObject();
                 ResultSet resultSet = fetch.result();
@@ -61,8 +59,32 @@ public class CustomerDatabaseServices implements DatabaseServices {
                 } else {
                     response.put("found", true);
                     JsonArray row = resultSet.getResults().get(0);
-                    response.put("id", row.getInteger(0));
-                    response.put("rawContent", row.getString(1));
+                    response.put("product", row.toString());
+                }
+                resultHandler.handle(Future.succeededFuture(response));
+            } else {
+                LOGGER.error("Database query error", fetch.cause());
+                resultHandler.handle(Future.failedFuture(fetch.cause()));
+            }
+        });
+        return this;
+    }
+
+
+    public DatabaseServices selectByName(String name, Handler<AsyncResult<JsonObject>> resultHandler) {
+        String sqlSelectByName = "SELECT * FROM skip.product WHERE name = ? ;";
+        jdbcClient.queryWithParams(sqlSelectByName, new JsonArray().add(name), fetch -> {
+            if (fetch.succeeded()) {
+                JsonObject response = new JsonObject();
+                ResultSet resultSet = fetch.result();
+                if (resultSet.getNumRows() == 0) {
+                    response.put("found", false);
+                } else {
+                    response.put("found", true);
+                    JsonArray row = new JsonArray(resultSet.getResults()
+                            .stream().map(json -> json.getInteger(1))
+                            .sorted().collect(Collectors.toList())
+                    );
                 }
                 resultHandler.handle(Future.succeededFuture(response));
             } else {
@@ -75,19 +97,7 @@ public class CustomerDatabaseServices implements DatabaseServices {
 
     @Override
     public DatabaseServices insert(JsonObject jsonObject, Handler<AsyncResult<Void>> resultHandler) {
-        String sqlInsert = "INSERT INTO skip.address (lineone, linetwo, region, postcode, country) VALUES (?, ?, ?, ?, ?); "
-                + "SET @lastIdTableAdress = LAST_INSERT_ID(); "
-                + "INSERT INTO skip.CUSTOMER (email, name, password, creation, address_id) VALUES (?, ?, ?, ?, @lastIdTableAdress);";
-        jsonObject.put("creation", new Date(System.currentTimeMillis()));
-        JsonArray jsonArray = new JsonArray().add(jsonObject);
-        jdbcClient.updateWithParams(sqlInsert, jsonArray, updateresult -> {
-            if (updateresult.succeeded()) {
-                resultHandler.handle(Future.succeededFuture());
-            } else {
-                LOGGER.error("Database error on creating customer");
-                resultHandler.handle(Future.failedFuture(updateresult.cause()));
-            }
-        });
+        resultHandler.handle(Future.failedFuture(new UnsupportedOperationException("Not supported yet.")));
         return this;
     }
 
@@ -102,6 +112,4 @@ public class CustomerDatabaseServices implements DatabaseServices {
         resultHandler.handle(Future.failedFuture(new UnsupportedOperationException("Not supported yet.")));
         return this;
     }
-
-
 }

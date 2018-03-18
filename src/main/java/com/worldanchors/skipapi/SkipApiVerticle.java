@@ -1,12 +1,12 @@
 package com.worldanchors.skipapi;
 
+import com.worldanchors.skipapi.database.CustomerDataBaseVerticle;
+import com.worldanchors.skipapi.database.ProductsDataBaseVerticle;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
-import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.ext.jdbc.JDBCClient;
 
 public class SkipApiVerticle extends AbstractVerticle {
 
@@ -14,22 +14,41 @@ public class SkipApiVerticle extends AbstractVerticle {
 
     @Override
     public void start(Future<Void> startFuture) throws Exception {
-        Future<String> dbVerticle = Future.future();
-        dbVerticle.compose(id -> {
-            Future<String> httpVerticleDeployment = Future.future();
+        Future<String> customerDbVerticle = Future.future();
+        vertx.deployVerticle(new CustomerDataBaseVerticle(), customerDbVerticle.completer());
 
-            vertx.deployVerticle("com.worldanchors.skipapi.http.HttpServerVerticle",
-                    new DeploymentOptions().setInstances(2),
-                    httpVerticleDeployment.completer());
+        customerDbVerticle.compose(customerid -> {
 
-            return httpVerticleDeployment;
+            Future<String> productDbVerticle = Future.future();
+            vertx.deployVerticle(new ProductsDataBaseVerticle(), productDbVerticle.completer());
 
+            productDbVerticle.compose(productid -> {
+                Future<String> httpVerticleDeployment = Future.future();
 
-        }).setHandler(asyncResult -> {
-            if (asyncResult.succeeded()) {
+                vertx.deployVerticle("com.worldanchors.skipapi.http.HttpServerVerticle",
+                        new DeploymentOptions().setInstances(2),
+                        httpVerticleDeployment.completer());
+                return httpVerticleDeployment;
+
+            }).setHandler(productAsyncResult -> {
+
+                if (productAsyncResult.succeeded()) {
+                    customerDbVerticle.complete();
+
+                } else {
+                    customerDbVerticle.fail(productAsyncResult.cause());
+                    LOGGER.error("Error initializing verticles ", productAsyncResult.cause());
+                }
+            });
+
+            return productDbVerticle;
+
+        }).setHandler(customerAsyncResult -> {
+            if (customerAsyncResult.succeeded()) {
                 startFuture.complete();
             } else {
-                startFuture.fail(asyncResult.cause());
+                startFuture.fail(customerAsyncResult.cause());
+                LOGGER.error("Error initializing verticles ", customerAsyncResult.cause());
             }
         });
 
